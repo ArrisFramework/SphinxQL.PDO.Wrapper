@@ -25,6 +25,8 @@ $sphinx_connection = new \Arris\Database\DBWrapper([
     'charset_collate'   =>  NULL
 ]);
 
+// или через Arris\Database\Connector()
+
 $toolkit = new PDOWrapper($mysql_connection, $sphinx_connection);
 $toolkit->setRebuildIndexOptions([
     'log_rows_inside_chunk' =>  false,
@@ -52,5 +54,49 @@ if ($rt_index) {
 } else {
     CLIConsole::say("[SEARCH.RT_INDEX.ARTICLES] <font color='red'>disabled</font>");
 }
+
+```
+
+# ToDo
+
+Добавить
+```php
+    /**
+     * @param $connection
+     * @param $index
+     * @return false|\PDOStatement
+     */
+    public static function RTIndexOptimize($connection, $index)
+    {
+        $query = "OPTIMIZE INDEX {$index}";
+        return $connection->query($query);
+    }
+
+    /**
+     * @param $connection
+     * @param $index
+     * @param bool $reconfigure
+     * @return bool
+     */
+    public static function RTIndexTruncate($connection, $index, bool $reconfigure = true): bool
+    {
+        $with = $reconfigure ? 'WITH RECONFIGURE' : '';
+        return (bool)$connection->query("TRUNCATE RTINDEX {$index} {$with}");
+    }
+    
+        /**
+     * @param $connection
+     * @param $index
+     * @return bool
+     */
+    public static function RTIndexCheckExist($connection, $index)
+    {
+        $index_definition = $connection->query("SHOW TABLES LIKE '{$index}' ")->fetchAll();
+    
+        return \count($index_definition) > 0;
+    }
+    
+    // +show meta
+    // +show version
 
 ```

@@ -6,26 +6,33 @@ use Closure;
 use PDO;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use function array_filter;
+use function array_key_exists;
+use function array_keys;
+use function array_map;
+use function call_user_func_array;
+use function ceil;
+use function count;
+use function implode;
+use function in_array;
+use function is_array;
+use function is_null;
 
 class PDOWrapper implements PDOWrapperInterface
 {
     /**
      * MySQL-коннектор.
      *
-     * NB: Мы не объявляем тип PDO, поскольку может передаваться как PDO, так и Arris\DBWrapper
-     *
      * @var PDO
      */
-    private $mysql_connection;
+    private PDO $mysql_connection;
 
     /**
      * PDO-коннектор к SearchD
      *
-     * NB: Мы не объявляем тип PDO, поскольку может передаваться как PDO, так и Arris\DBWrapper
-     *
      * @var PDO
      */
-    private $searchd_connection;
+    private PDO $searchd_connection;
 
     /**
      * Логгер
@@ -107,7 +114,7 @@ class PDOWrapper implements PDOWrapperInterface
      * @param callable $messenger
      * @return void
      */
-    public function setConsoleMessenger(callable $messenger)
+    public function setConsoleMessenger(callable $messenger): void
     {
         $this->messenger = $messenger;
     }
@@ -131,22 +138,22 @@ class PDOWrapper implements PDOWrapperInterface
         $sphinx_connection = $this->searchd_connection;
 
         if (empty($searchd_index)) {
-            throw new PDOWrapperException("Requested update of undefined index", 1);
+            throw PDOWrapperException::create("Requested update of undefined index",[], 1);
         }
 
         if (empty($mysql_table)) {
-            throw new PDOWrapperException('Not defined source SQL table', 1);
+            throw PDOWrapperException::create('Not defined source SQL table', [], 1);
         }
 
         // проверяем, существует ли индекс
         if (! self::RTIndexCheckExist($this->searchd_connection, $searchd_index)) {
-            throw new PDOWrapperException("Index [{$searchd_index}] not present", 1);
+            throw PDOWrapperException::create("Index [{$searchd_index}] not present", [],1);
         }
 
 
         $chunk_size = $this->options['chunk_length'];
-        if (0 == $chunk_size) {
-            throw new PDOWrapperException("Chunk size is ZERO");
+        if (0 === $chunk_size) {
+            throw PDOWrapperException::create("Chunk size is ZERO");
         }
 
         // truncate
@@ -157,11 +164,11 @@ class PDOWrapper implements PDOWrapperInterface
         $total_updated = 0;
 
         if ($this->options['log_before_index']) {
-            \call_user_func_array($this->messenger, [ "<font color='yellow'>[{$searchd_index}]</font> index : ", false ]);
+            call_user_func_array($this->messenger, [ "<font color='yellow'>[{$searchd_index}]</font> index : ", false ]);
         }
 
         if ($this->options['log_total_rows_found']) {
-            \call_user_func_array($this->messenger, [
+            call_user_func_array($this->messenger, [
                 "<font color='green'>{$total_count}</font> elements found for rebuild."
             ]);
         }
@@ -169,11 +176,11 @@ class PDOWrapper implements PDOWrapperInterface
         // iterate chunks (ASC)
         // для обратной итерации (DESC) надо писать do-while цикл?
 
-        for ($i = 0; $i < \ceil($total_count / $chunk_size); $i++) {
+        for ($i = 0; $i < ceil($total_count / $chunk_size); $i++) {
             $offset = $i * $chunk_size;
 
             if ($this->options['log_before_chunk']) {
-                \call_user_func_array($this->messenger, [
+                call_user_func_array($this->messenger, [
                     "Rebuilding elements from <font color='green'>{$offset}</font>, <font color='yellow'>{$chunk_size}</font> count... ",
                     false
                 ]);
@@ -188,7 +195,7 @@ class PDOWrapper implements PDOWrapperInterface
             // iterate inside chunk
             while ($item = $sth->fetch()) {
                 if ($this->options['log_rows_inside_chunk']) {
-                    \call_user_func_array($this->messenger, [
+                    call_user_func_array($this->messenger, [
                         "{$mysql_table}: {$item['id']}"
                     ]);
                 }
@@ -209,30 +216,30 @@ class PDOWrapper implements PDOWrapperInterface
             $breakline_after_chunk = !$this->options['sleep_after_chunk'];
 
             if ($this->options['log_after_chunk']) {
-                \call_user_func_array($this->messenger, [
+                call_user_func_array($this->messenger, [
                     "Updated RT-index <font color='yellow'>{$searchd_index}</font>.",
                     $breakline_after_chunk
                 ]);
             } else {
-                \call_user_func_array($this->messenger, [
+                call_user_func_array($this->messenger, [
                     "<strong>Ok</strong>",
                     $breakline_after_chunk
                 ]);
             }
 
             if ($this->options['sleep_after_chunk']) {
-                \call_user_func_array($this->messenger, [
+                call_user_func_array($this->messenger, [
                     "ZZZZzzz for {$this->options['sleep_time']} second(s)... ",
                     false
                 ]);
                 sleep($this->options['sleep_time']);
-                \call_user_func_array($this->messenger, [
+                call_user_func_array($this->messenger, [
                     "I woke up!"
                 ]);
             }
         } // for
         if ($this->options['log_after_index']) {
-            \call_user_func_array($this->messenger, [
+            call_user_func_array($this->messenger, [
                 "Total updated <strong>{$total_updated}</strong> elements for <font color='yellow'>{$searchd_index}</font> RT-index. <br>"
             ]);
         }
@@ -273,22 +280,22 @@ class PDOWrapper implements PDOWrapperInterface
     {
         $query = "REPLACE INTO {$table} (";
 
-        $dataset_keys = \array_keys($dataset);
+        $dataset_keys = array_keys($dataset);
 
-        $query .= \implode(', ', \array_map(function ($i){
+        $query .= implode(', ', array_map(function ($i){
             return "{$i}";
         }, $dataset_keys));
 
         $query .= " ) VALUES ( ";
 
-        $query .= \implode(', ', \array_map(function ($i) use ($mva_attributes, $dataset){
-            return \in_array($i, $mva_attributes) ? "({$dataset[$i]})" : ":{$i}";
+        $query .= implode(', ', array_map(function ($i) use ($mva_attributes, $dataset){
+            return in_array($i, $mva_attributes) ? "({$dataset[$i]})" : ":{$i}";
         }, $dataset_keys));
 
         $query .= " ) ";
 
-        $new_dataset = \array_filter($dataset, function ($value, $key) use ($mva_attributes) {
-            return !\in_array($key, $mva_attributes);
+        $new_dataset = array_filter($dataset, function ($value, $key) use ($mva_attributes) {
+            return !in_array($key, $mva_attributes);
         }, ARRAY_FILTER_USE_BOTH);
 
         return [
@@ -303,17 +310,17 @@ class PDOWrapper implements PDOWrapperInterface
      */
     private static function buildReplaceQuery(string $table, array $dataset):string
     {
-        $dataset_keys = \array_keys($dataset);
+        $dataset_keys = array_keys($dataset);
 
         $query = "REPLACE INTO {$table} (";
 
-        $query.= \implode(', ', \array_map(function ($i){
+        $query.= implode(', ', array_map(function ($i){
             return "{$i}";
         }, $dataset_keys));
 
         $query.= " ) VALUES ( ";
 
-        $query.= \implode(', ', \array_map(function ($i){
+        $query.= implode(', ', array_map(function ($i){
             return ":{$i}";
         }, $dataset_keys));
 
@@ -331,15 +338,15 @@ class PDOWrapper implements PDOWrapperInterface
      */
     private static function setOption(array $options = [], $key = null, $default_value = null)
     {
-        if (!\is_array($options)) {
+        if (!is_array($options)) {
             return $default_value;
         }
 
-        if (\is_null($key)) {
+        if (is_null($key)) {
             return $default_value;
         }
 
-        return \array_key_exists($key, $options) ? $options[ $key ] : $default_value;
+        return array_key_exists($key, $options) ? $options[ $key ] : $default_value;
     }
 
     private static function RTIndexCheckExist($connection, string $index)
@@ -350,7 +357,7 @@ class PDOWrapper implements PDOWrapperInterface
 
         $index_definition = $connection->query("SHOW TABLES LIKE '{$index}' ")->fetchAll();
 
-        return \count($index_definition) > 0;
+        return count($index_definition) > 0;
     }
 
     /**
@@ -386,6 +393,6 @@ class PDOWrapper implements PDOWrapperInterface
 
         return $pdo->query($query)->fetchColumn() ?? 0;
     }
-
-
 }
+
+# -eof- #
